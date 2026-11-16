@@ -1,0 +1,6 @@
+.env
+__pycache__/
+index.json
+chroma_db/
+.model_cache/
+.venv/

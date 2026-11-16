@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RAG 智能问答</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+    background: #f5f6f8; color: #1f2328;
+    display: flex; flex-direction: column; height: 100vh;
+  }
+  header {
+    text-align: center; padding: 12px; background: #fff;
+    border-bottom: 1px solid #e8eaee;
+  }
+  h1 { font-size: 17px; font-weight: 600; }
+  .subtitle { color: #8a919c; font-size: 12px; margin-top: 2px; }
+
+  /* 聊天区：占满中间空间，内容多了在这里滚动 */
+  #chat { flex: 1; overflow-y: auto; padding: 20px 16px 12px; }
+  .empty-hint { text-align: center; color: #a2a8b1; font-size: 14px; margin-top: 24vh; }
+  .empty-hint b { color: #6b7280; }
+
+  .msg { max-width: 720px; margin: 0 auto 18px; }
+  .msg.user { display: flex; justify-content: flex-end; }
+  .bubble-user {
+    background: #4a7cf7; color: #fff; border-radius: 14px 14px 4px 14px;
+    padding: 10px 16px; font-size: 15px; max-width: 80%; white-space: pre-wrap;
+  }
+  .bubble-ai {
+    background: #fff; border-radius: 14px 14px 14px 4px;
+    padding: 14px 18px; box-shadow: 0 2px 10px rgba(0,0,0,.06);
+  }
+
+  /* 思考过程：灰色小字，一行行蹦出来 */
+  .thinking { margin-bottom: 10px; }
+  .think-line { color: #9aa1ab; font-size: 13px; line-height: 1.9; }
+  .think-line.doing { color: #6b7280; }
+  .think-line.doing::after { content: "…"; animation: dots 1.2s infinite; }
+  @keyframes dots { 0%{content:"…";} 33%{content:"·";} 66%{content:"··";} }
+
+  /* 回答：流式打字机 */
+  .answer {
+    font-size: 15px; line-height: 1.85; white-space: pre-wrap; min-height: 24px;
+  }
+  .cursor::after { content: "▍"; color: #4a7cf7; animation: blink 1s infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  /* 参考资料：默认折叠，想看再点开，不占版面 */
+  details.refs { margin-top: 12px; }
+  details.refs summary {
+    cursor: pointer; color: #8a919c; font-size: 12px; user-select: none;
+  }
+  details.refs summary:hover { color: #4a7cf7; }
+  .chunk {
+    font-size: 13px; line-height: 1.7; color: #4b5563;
+    background: #f8f9fb; border-radius: 8px; padding: 8px 12px;
+    margin-top: 8px; border-left: 3px solid #c7d3f5;
+  }
+  .badge {
+    display: inline-block; background: #eef2ff; color: #4a7cf7;
+    font-size: 11px; border-radius: 20px; padding: 1px 9px; margin-right: 8px;
+  }
+
+  /* 输入栏：固定在底部 */
+  .input-bar {
+    background: #fff; border-top: 1px solid #e8eaee;
+    padding: 12px 16px 14px; display: flex; gap: 10px;
+  }
+  .input-inner { max-width: 760px; margin: 0 auto; display: flex; gap: 10px; width: 100%; }
+  input {
+    flex: 1; border: 1px solid #d8dbe0; border-radius: 10px;
+    padding: 11px 14px; font-size: 15px; outline: none;
+  }
+  input:focus { border-color: #4a7cf7; }
+  button {
+    border: none; border-radius: 10px; padding: 11px 24px;
+    background: #4a7cf7; color: #fff; font-size: 15px; cursor: pointer;
+  }
+  button:hover { background: #3b6ae0; }
+  button:disabled { background: #a9b8d8; cursor: not-allowed; }
+</style>
+</head>
+<body>
+<header>
+  <h1>RAG 智能问答系统</h1>
+  <div class="subtitle">向量检索 → 重排序 → 流式生成 · 接口文档 <a href="/docs" target="_blank">/docs</a></div>
+</header>
+
+<div id="chat">
+  <div class="empty-hint" id="emptyHint">
+    问点什么吧<br><b>试试：试用期最长可以约定多久？</b>
+  </div>
+</div>
+
+<div class="input-bar">
+  <div class="input-inner">
+    <input id="question" placeholder="输入你的问题…" />
+    <button id="askBtn" onclick="ask()">发送</button>
+  </div>
+</div>
+
+<script>
+  const chatEl = document.getElementById("chat");
+  const input = document.getElementById("question");
+  const btn = document.getElementById("askBtn");
+
+  input.addEventListener("keydown", (e) => { if (e.key === "Enter") ask(); });
+
+  // 自动滚动到底部（新内容总是出现在输入框上方，不用手动翻）
+  function scrollDown() {
+    chatEl.scrollTop = chatEl.scrollHeight;
+  }
+
+  async function ask() {
+    const question = input.value.trim();
+    if (!question || btn.disabled) return;
+
+    document.getElementById("emptyHint")?.remove();
+    btn.disabled = true;
+    input.value = "";
+
+    // 用户气泡（右对齐）
+    const userMsg = document.createElement("div");
+    userMsg.className = "msg user";
+    const userBubble = document.createElement("div");
+    userBubble.className = "bubble-user";
+    userBubble.textContent = question;
+    userMsg.appendChild(userBubble);
+    chatEl.appendChild(userMsg);
+    scrollDown();
+
+    // AI 气泡（左对齐）：思考过程 + 回答 + 折叠的参考资料
+    const aiMsg = document.createElement("div");
+    aiMsg.className = "msg";
+    const bubble = document.createElement("div");
+    bubble.className = "bubble-ai";
+
+    const thinkingEl = document.createElement("div");
+    thinkingEl.className = "thinking";
+    bubble.appendChild(thinkingEl);
+
+    const answerEl = document.createElement("div");
+    answerEl.className = "answer cursor";
+    bubble.appendChild(answerEl);
+
+    // 两个折叠区（先创建空的，收到数据再填充）
+    const refsDetails = document.createElement("details");
+    refsDetails.className = "refs";
+    refsDetails.innerHTML = "<summary>参考来源 top-3</summary><div class='refs-body'></div>";
+    const candDetails = document.createElement("details");
+    candDetails.className = "refs";
+    candDetails.innerHTML = "<summary>粗筛候选 top-6</summary><div class='refs-body'></div>";
+    bubble.appendChild(refsDetails);
+    bubble.appendChild(candDetails);
+
+    aiMsg.appendChild(bubble);
+    chatEl.appendChild(aiMsg);
+    scrollDown();
+
+    // 思考过程的"就地变身"：每个阶段只有一行，
+    // 开始时是"正在…"（带动画点），完成时这一行原地替换成"✓ 完成…"
+    let currentLine = null;
+    function startThinking(text) {
+      const line = document.createElement("div");
+      line.className = "think-line doing";
+      line.textContent = text;
+      thinkingEl.appendChild(line);
+      currentLine = line;
+      scrollDown();
+    }
+    function finishThinking(text) {
+      if (currentLine) {
+        currentLine.textContent = text;
+        currentLine.classList.remove("doing");
+        currentLine = null;
+      }
+      scrollDown();
+    }
+    function fillChunks(bodyEl, chunks) {
+      for (const c of chunks) {
+        const div = document.createElement("div");
+        div.className = "chunk";
+        div.innerHTML = '<span class="badge">相似度 ' + c.score + "</span>" +
+          c.text.replace(/</g, "&lt;");
+        bodyEl.appendChild(div);
+      }
+    }
+
+    try {
+      const resp = await fetch("/ask", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ question }),
+      });
+      if (!resp.ok) throw new Error("服务器返回错误 " + resp.status);
+
+      const reader = resp.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = "";
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        const parts = buf.split("\n\n");   // 每条 SSE 消息以空行结尾
+        buf = parts.pop();
+        for (const part of parts) {
+          const line = part.trim();
+          if (!line.startsWith("data:")) continue;
+          const msg = JSON.parse(line.slice(5).trim());
+          if (msg.type === "thinking") {
+            // 思考过程：开始的行显示动画点，✓ 开头的把当前行原地替换成结果
+            if (msg.text.startsWith("✓")) {
+              finishThinking(msg.text);
+            } else {
+              startThinking(msg.text);
+            }
+          } else if (msg.type === "candidates") {
+            fillChunks(candDetails.querySelector(".refs-body"), msg.candidates);
+          } else if (msg.type === "chunks") {
+            fillChunks(refsDetails.querySelector(".refs-body"), msg.chunks);
+          } else if (msg.type === "token") {
+            answerEl.textContent += msg.text;
+            scrollDown();
+          } else if (msg.type === "done") {
+            // 把"正在生成回答…"这一行原地替换成完成信息
+            finishThinking("✅ 完成 · 总耗时 " + msg.elapsed + " 秒（生成 " + msg.gen_elapsed + " 秒）");
+          } else if (msg.type === "error") {
+            finishThinking("❌ 出错：" + msg.text);
+          }
+        }
+      }
+    } catch (err) {
+      finishThinking("❌ 出错：" + err.message);
+    } finally {
+      answerEl.classList.remove("cursor");
+      btn.disabled = false;
+      input.focus();
+      scrollDown();
+    }
+  }
+</script>
+</body>
+</html>
