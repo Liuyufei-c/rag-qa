@@ -1,0 +1,7 @@
+openai
+numpy
+python-dotenv
+chromadb
+fastembed
+fastapi
+uvicorn
