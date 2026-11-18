@@ -1,4 +1,4 @@
-# ask.py —— 提问：问题 → 向量 → 检索最相关段落 → LLM 生成回答
+# ask.py —— v1 版提问：问题 → 向量 → 线性检索 → LLM 生成
 # 用法：python ask.py "你的问题"
 import sys
 
@@ -24,16 +24,13 @@ def main():
         print(e)
         return
 
-    # 1. 把问题也变成向量
     query_vec = rag_lib.embed_texts(client, [question])[0]
 
-    # 2. 检索最相似的 3 段
     hits = rag_lib.retrieve(index, query_vec, k=3)
     print("\n—— 检索到的最相关段落（相似度从高到低）——")
     for text, score in hits:
         print(f"[相似度 {score:.3f}] {text[:80]}...")
 
-    # 3. 交给 LLM 生成回答
     print("\n—— AI 回答 ——")
     answer = rag_lib.ask_llm(client, question, hits)
     print(answer)

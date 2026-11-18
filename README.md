@@ -56,7 +56,7 @@
 # 接口文档自动生成在 http://127.0.0.1:8000/docs
 ```
 
-命令行版也可以玩（历史版本，用于对照）：
+命令行版也可以使用（历史版本，用于对照）：
 
 ```bash
 .venv\Scripts\python.exe ask.py "试用期最长是多久？"        # v1 线性扫描
@@ -78,7 +78,7 @@
 ```
 rag-qa/
   data/                 文档库（换成你自己的 .md 即可）
-  rag_lib.py            核心逻辑：切块/嵌入/检索/精排/生成（全部中文注释）
+  rag_lib.py            核心逻辑：切块/嵌入/检索/精排/生成
   build_db.py           建库（支持多文档，自动清空重建）
   webapp.py             FastAPI 网页服务（/ask 走 SSE 流式）
   static/index.html     前端：聊天界面 + 思考过程 + 自动滚动
