@@ -6,6 +6,7 @@
 
 ## ✨ 亮点
 
+- 📈 **效果优化记录**：完整的 badcase 拆解文档（现象→定位→方案→验证），见 [docs/优化记录.md](docs/优化记录.md)
 - **向量数据库**：chromadb 持久化存储 + HNSW 索引，检索从线性扫描 O(N) 升级到毫秒级近似最近邻
 - **两段式检索**：向量粗筛 top-6（保召回率）→ LLM 精排 top-3（保精度），精排用 RankGPT 式打分排序
 - **嵌入本地化**：bge-small-zh-v1.5（fastembed + ONNX Runtime，512 维），建库/检索零 API 成本、离线可用
