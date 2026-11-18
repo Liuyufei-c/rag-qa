@@ -89,9 +89,9 @@ rag-qa/
 
 ## ❓ 常见问题
 
-- **端口被占用**：`netstat -ano | grep :8000` 找到占用的 PID，`taskkill //PID xxx //F`；或换个端口改 `webapp.py` 最后一行
-- **模型下载慢**：代码里已配置 `HF_ENDPOINT=https://hf-mirror.com`（国内镜像），模型缓存在 `.model_cache/`
-- **换自己的文档**：把文件丢进 `data/`，重新 `build_db.py data/你的文档.md`（改库会清空重建）
+- **使用流程是怎样的？** 先运行 `build_db.py` 建库（切块 → 本地嵌入 → 存入 chromadb），再通过 `webapp.py`（网页版）或 `ask_rerank.py`（命令行版）提问：问题转向量 → 向量粗筛 top-6 → LLM 精排 top-3 → 流式生成回答
+- **文档更新后如何生效？** 重新运行 `build_db.py`，脚本会先清空旧集合再全量重建，避免旧块残留；每个块带文档来源编号，答案可追溯到出处
+- **为什么建库离线、提问却需要 API key？** 嵌入使用本地模型（bge-small-zh-v1.5），零成本、毫秒级、离线可用；只有"重排序"与"生成回答"两个环节调用 LLM API（glm-4-flash）
 
 ## 🎯 后续计划
 
